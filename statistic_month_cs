@@ -1,0 +1,265 @@
+###############################################################################
+#
+# made by Marshaw
+#
+# excel的起始日期是1899-12-30
+#
+# 已更新完成，更新日期：7/12/2023
+#
+# 需求：当前处理人（卡审的数量和人员），和历史审批人&办理人（结束办理的工作统计量）
+#
+###############################################################################
+rm(list=ls())
+
+library(readxl)
+library(dplyr)
+
+#######################################.   params.  #################################################################################################################################
+#未来随时需要加上或删除名字
+names_list <- c('Jackson Zhao','Theo Zhang', 'Prince','Seven','Fruehling','future','Hale','Wenty','Jenny','Loki Luo')
+
+wb <- loadWorkbook("Downloads/客服风控用户资料同步(全部)20231213093153.xlsx") ##读取的档案
+wb1 <- loadWorkbook("Downloads/客服风控用户资料同步(全部)20231213093254.xlsx") ##读取的档案
+file_path <- "Downloads/客服风控资料1101-1212各兄弟日纬度工作量统计.xlsx"##写入的档案名称
+
+############################################。资料导入。 ##################################################################################################################################################
+# 获取 Excel 文件中的所有 sheet 名称
+sheet_names <- names(wb)
+
+all_data <- NULL
+data_dangqian <- NULL
+# 循环读取每个 sheet 的内容
+for (sheet_name in 1:length(sheet_names)) {
+  
+  rawdata1 <- read.xlsx(wb, sheet = sheet_name)  # 读取当前 sheet 的数据
+  colname <- rawdata1[1,]
+  rawdata1 <- rawdata1[-1,]
+  colnames(rawdata1) <- colname
+  duplicate_rows <- duplicated(rawdata1$申请编号)
+  unique_rawdata1 <- subset(rawdata1, !duplicate_rows)
+  unique_rawdata1[,"发起时间"]<- as.POSIXct(unique_rawdata1[,"发起时间"] %>% unlist() %>% as.numeric() %>% floor()*86400, origin = "1899-12-30", tz = "UTC", format = "%Y-%m-%d") %>% as.data.frame()
+  data1 <- unique_rawdata1[,c("发起时间","历史审批人","历史办理人","申请编号","申请状态")]
+  rawdata_dangqian <- unique_rawdata1[,c("发起时间", "当前处理人","申请编号","申请状态")]
+  all_data <- rbind(all_data,data1)
+  data_dangqian <- rbind(data_dangqian,rawdata_dangqian)
+}
+# 获取 Excel 文件中的所有 sheet 名称2
+sheet_names <- names(wb1)
+
+all_data1 <- NULL
+# 循环读取每个 sheet 的内容
+for (sheet_name in 1:length(sheet_names)) {
+  
+  rawdata1 <- read.xlsx(wb1, sheet = sheet_name)  # 读取当前 sheet 的数据
+  colname <- rawdata1[1,]
+  rawdata1 <- rawdata1[-1,]
+  colnames(rawdata1) <- colname
+  duplicate_rows <- duplicated(rawdata1$申请编号)
+  unique_rawdata1 <- subset(rawdata1, !duplicate_rows)
+  unique_rawdata1[,"发起时间"]<- as.POSIXct(unique_rawdata1[,"发起时间"] %>% unlist() %>% as.numeric() %>% floor()*86400, origin = "1899-12-30", tz = "UTC", format = "%Y-%m-%d") %>% as.data.frame()
+  data1 <- unique_rawdata1[,c("发起时间","历史审批人","历史办理人","申请编号","申请状态")]
+  data_dangqian1 <- unique_rawdata1[,c("发起时间", "当前处理人","申请编号","申请状态")]
+  all_data1 <- rbind(all_data1,data1)
+}
+all_data <- rbind(all_data, all_data1)
+data_dangqian <- rbind(data_dangqian, data_dangqian1)
+
+data1 <- all_data
+rm(unique_rawdata1)
+date1 <- all_data[,1] %>% as.data.frame() 
+###########################################   统计历史审批人&历史办理人   #######################################################################################################
+#######split名字
+##处理历史审批人
+split_string <- strsplit(data1[,2], ";")
+names(split_string) <- date1
+
+tem <- NULL
+for (i in 1:length(split_string)) {
+  tem <- c(tem, length(split_string[[i]]))
+}
+max1 <- max(tem) #为了成立新data的column
+new_data <- NULL
+for (i in 1:length(split_string)) {
+  tem <- split_string[[i]]
+  n = length(tem)
+  ntem <- c(tem, rep(NA, max1 - n)) %>% as.data.frame() %>% t()
+  new_data <- rbind(new_data, ntem)##
+}
+shenpi <- as.data.frame(new_data)
+shenpi <- cbind(data1[,1],shenpi)
+
+##处理历史办理人
+split_string <- strsplit(data1[,3], ";")
+names(split_string) <- date1
+
+tem <- NULL
+for (i in 1:length(split_string)) {
+  tem <- c(tem, length(split_string[[i]]))
+}
+max1 <- max(tem) #为了成立新data的column
+new_data <- NULL
+for (i in 1:length(split_string)) {
+  tem <- split_string[[i]]
+  n = length(tem)
+  ntem <- c(tem, rep(NA, max1 - n)) %>% as.data.frame() %>% t()
+  new_data <- rbind(new_data, ntem)##
+}
+banli <- as.data.frame(new_data)
+
+data2 <- cbind(shenpi, banli)
+data2 <- as.data.frame(data2)
+data2 <- cbind(data2,data1[,c("申请编号","申请状态")]) #data2是有申请状态和申请编号的
+data2 <- data2[order(data2[,1]),]
+
+rm(split_string,banli,shenpi, ntem, new_data,max1,tem,data1,data_dangqian1,all_data1)
+
+date1 <- as.Date(data2[,1])
+data2 <- data2[order(data2[,1]),]
+
+shenpi_list <- split(data2, f = data2[,1])
+
+data_shenpi <- data.frame(matrix(nrow = 300, ncol = 0))
+for (i in 1:length(shenpi_list)) {
+  
+  tem <- shenpi_list[[i]]
+  tem <- shenpi_list[[i]]
+  temdate <- tem[1,1]
+  tem1 <- tem[,-1]#去掉date
+  
+  library(tidyr)
+  gathered_tem <- gather(tem1, key = "Column", value = "Value")
+  gathered_tem <- gathered_tem[,2]
+  gathered_tem <- ifelse(gathered_tem %in% names_list, gathered_tem, NA) %>% as.data.frame()
+  colnames(gathered_tem) <- temdate
+  
+  gathered_tem <- na.omit(gathered_tem) %>% as.data.frame()
+  tem_na <- c(rep(NA,300-nrow(gathered_tem))) %>% as.data.frame()
+  names(tem_na) <- names(gathered_tem)
+  data_extended <- rbind(gathered_tem, tem_na)
+  
+  data_shenpi <- cbind(data_shenpi,data_extended) 
+}
+rm(gathered_tem,shenpi_list,tem_na,tem1,tem, data_extended, temdate)
+
+# 遍历每列，计算每个名字在每列中出现的次数
+# 创建一个空的结果数据框来存储每个名字在每列中出现的次数
+result <- data.frame(matrix(NA, nrow = length(names_list), ncol = ncol(data_shenpi)))
+colnames(result) <- colnames(data_shenpi)
+rownames(result) <- names_list
+
+for (i in 1:ncol(data_shenpi)) {
+  col <- data_shenpi[, i]
+  for (j in 1:length(names_list)) {
+    name_count <- sum(col == names_list[j], na.rm = TRUE)
+    result[j, i] <- name_count
+  }
+}
+result <- t(result) %>% as.data.frame()
+date <- rownames(result)
+result <- cbind(date, result) ##历史审批人和历史办理人的每日统计量
+
+################################    处理当前处理人    ##########################################################################################################################
+date1 <- data_dangqian$发起时间
+
+#######split名字
+##处理当前处理人
+split_string <- strsplit(data_dangqian[,2], ";")
+names(split_string) <- date1
+
+tem <- NULL
+for (i in 1:length(split_string)) {
+  tem <- c(tem, length(split_string[[i]]))
+}
+max1 <- max(tem) #为了成立新data的column
+new_data <- NULL
+for (i in 1:length(split_string)) {
+  tem <- split_string[[i]]
+  n = length(tem)
+  ntem <- c(tem, rep(NA, max1 - n)) %>% as.data.frame() %>% t()
+  new_data <- rbind(new_data, ntem)##
+}
+dangqian <- as.data.frame(new_data)
+dangqian <- cbind(data_dangqian[,"发起时间"],dangqian,data_dangqian[,c("申请编号","申请状态")])
+
+rm(split_string,data_dangqian, ntem, new_data,date1,max1,tem,data1)
+
+date1 <- as.Date(dangqian[,1])
+dangqian <- dangqian[order(dangqian[,1]),]
+
+shenpi_list <- split(dangqian, f = dangqian[,1])
+data_dangqian <- data.frame(matrix(nrow = 300, ncol = 0))
+for (i in 1:length(shenpi_list)) {
+  
+  tem <- shenpi_list[[i]]
+  tem <- shenpi_list[[i]]
+  temdate <- tem[1,1]
+  tem1 <- tem[,-1]#去掉date
+  
+  library(tidyr)
+  gathered_tem <- gather(tem1, key = "Column", value = "Value")
+  gathered_tem <- gathered_tem[,2]
+  gathered_tem <- ifelse(gathered_tem %in% names_list, gathered_tem, NA) %>% as.data.frame()
+  colnames(gathered_tem) <- temdate
+  
+  gathered_tem <- na.omit(gathered_tem) %>% as.data.frame()
+  tem_na <- c(rep(NA,300-nrow(gathered_tem))) %>% as.data.frame()
+  names(tem_na) <- names(gathered_tem)
+  data_extended <- rbind(gathered_tem, tem_na)
+  
+  data_dangqian <- cbind(data_dangqian,data_extended) 
+}
+rm(gathered_tem,shenpi_list,tem_na,tem1,tem, data_extended,date1, temdate)
+
+# 遍历每列，计算每个名字在每列中出现的次数
+# 创建一个空的结果数据框来存储每个名字在每列中出现的次数
+result_dangqian <- data.frame(matrix(NA, nrow = length(names_list), ncol = ncol(data_dangqian)))
+colnames(result_dangqian) <- colnames(data_dangqian)
+rownames(result_dangqian) <- names_list
+
+for (i in 1:ncol(data_dangqian)) {
+  col <- data_dangqian[, i]
+  for (j in 1:length(names_list)) {
+    name_count <- sum(col == names_list[j], na.rm = TRUE)
+    result_dangqian[j, i] <- name_count
+  }
+}
+result_dangqian <- t(result_dangqian) %>% as.data.frame()
+date <- rownames(result_dangqian)
+result_dangqian <- cbind(date, result_dangqian) ##历史审批人和历史办理人的每日统计量
+
+################################    不必要的名字就删掉    ##########################################################################################################################
+# 替换data dangqian中不在names_list中的名字为NA
+n <- ncol(dangqian)
+tem <- dangqian[,c(2:(n-2))]
+dangqian1 <-  tem %>%
+  mutate(across(.cols = 1:ncol(tem), 
+                .fns = ~ if_else(. %in% names_list, ., NA_character_)))
+dangqian <- cbind(dangqian[,1],dangqian1,dangqian[,(n-1):n])
+
+# 替换data2中不在names_list中的名字为NA
+n <- ncol(data2)
+tem <- data2[,c(2:(n-2))]
+dangqian1 <-  tem %>%
+  mutate(across(.cols = 1:ncol(tem), 
+                .fns = ~ if_else(. %in% names_list, ., NA_character_)))
+data2 <- cbind(data2[,1],dangqian1,data2[,(n-1):n])
+whole_data <- merge(dangqian,data2, by = "申请编号")
+whole_data <- whole_data[,-ncol(whole_data)]
+
+################################    储存    ##########################################################################################################################
+
+# 创建一个 Excel 工作簿
+wb <- createWorkbook()
+
+# 将 df1 写入 Excel 文件的第一个工作表
+addWorksheet(wb, "当前处理人")
+writeData(wb, "当前处理人", result_dangqian)
+
+# 将 df2 写入 Excel 文件的第二个工作表
+addWorksheet(wb, "历史审批人&历史办理人")
+writeData(wb, "历史审批人&历史办理人", result)
+
+# 保存 Excel 文件
+saveWorkbook(wb, file_path, overwrite = TRUE)
+
+write.xlsx(whole_data, "Downloads/客服每日含申请编号和状态.xlsx", digits = 2)
